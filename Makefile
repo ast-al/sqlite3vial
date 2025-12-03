@@ -1,0 +1,2 @@
+default:
+	time g++ -o sqlite3vial_test -D_DEBUG -D_GLIBCXX_DEBUG -std=c++17 -fsanitize=undefined,address,bounds,leak -Wall -Wextra -Wconversion -Wdeprecated-declarations -Wstrict-aliasing -Wlogical-op -Wmissing-declarations -Wpedantic -Wshadow -Wsuggest-attribute=format -Wswitch -Wpointer-arith -Wmissing-include-dirs -Winvalid-pch -Wmissing-format-attribute -Wfloat-equal -Winit-self -Woverloaded-virtual -Wsign-promo -Wvla -Wredundant-decls -Wcast-align -Wcast-qual -Wno-misleading-indentation -Wsign-conversion -Wno-unknown-pragmas main.cpp -lsqlite3 && ./sqlite3vial_test
