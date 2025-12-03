@@ -1,4 +1,10 @@
 // sqlite3-vial - single-header c++17 convenience wrapper for sqlite3.h C API
+//
+// SPDX-License-Identifier: CC0-1.0
+// To the extent possible under law, the author(s) have dedicated all copyright
+// and related and neighboring rights to this software to the public domain
+// worldwide. This software is distributed without any warranty.
+// See <https://creativecommons.org/publicdomain/zero/1.0/>.
 
 #pragma once
 #ifndef SQLITE3VIAL_HPP
@@ -13,6 +19,7 @@
 #include <optional>
 #include <type_traits>
 #include <stdexcept>
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 
@@ -168,7 +175,7 @@ namespace detail
         else if constexpr (std::is_integral_v<T>)               return value_preserving_cast<T>(sqlite3_value_int64(val_ptr));
         else if constexpr (std::is_same_v<T, double>)           return sqlite3_value_double(val_ptr);
         else if constexpr (std::is_same_v<T, blob_t>)           return blob_t{ sqlite3_value_blob(val_ptr), (std::size_t)sqlite3_value_bytes(val_ptr) };
-        else if constexpr (is_constructible_from_c_str)         return T{ (const char*)sqlite3_value_text(val_ptr) };
+        else if constexpr (is_constructible_from_c_str)         { const auto text = sqlite3_value_text(val_ptr); return T{ text ? (const char*)text : "" };}
         else if constexpr (detail::is_optional_v<T>)            return db_type == SQLITE_NULL ? T{} : as<typename T::value_type>(val_ptr);
         else static_assert(detail::is_always_false_v<T>, "Unsupported arg type - expecting integral, double, std::string_view, std::string, blob_t, or std::optional thereof.");
     }
@@ -394,6 +401,10 @@ public:
 
         if (const auto rc = !clear_args? SQLITE_OK : sqlite3_clear_bindings(stmt_.get()); rc != SQLITE_OK) {
             x_throw("Failed to clear bindings.");
+        }
+
+        if (clear_args) {
+            std::fill(bound_param_flags_.begin(), bound_param_flags_.end(), (char)0);
         }
     }
 
@@ -686,6 +697,19 @@ static inline void test()
         assert(!stmt.fetchone()); // this subsequent call must be tested too
     }
 
+    // Test that empty text is handled correctly (not nullptr) in user functions
+    {
+        auto text_len_sum = 0ul;
+        db.register_function("sum_text_len", [&](std::string_view text)
+        {
+            text_len_sum += text.size();
+            return (int64_t)text.size();
+        });
+        // Row 2 has empty name (""), which should be handled correctly (size=0), not crash
+        const auto opt_result = db.make_stmt("SELECT SUM(sum_text_len(name)) FROM Foos").fetchone<int64_t>();
+        assert(opt_result && *opt_result == (int64_t)text_len_sum);
+    }
+
     // Example of registering a user-function; will call it from the SELECT below.
     // Args and return-type must be type-compatible with db-types;
     // std::optional for nullable values and sqlite3_value* for heterogeneous types.
@@ -767,10 +791,26 @@ static inline void test()
         assert(opt_name.value() == "First row");
     }
 
+    // Test that reset(true) properly clears bound_param_flags_ so subsequent exec throws for unbound params.
+    {
+        auto stmt = db.make_stmt("SELECT * FROM Foos WHERE id = ?");
+        stmt.bind_args(1).exec();  // bind and execute
+        stmt.reset(true);          // clear bindings (including bound_param_flags_)
+        
+        bool threw = false;
+        try {
+            stmt.exec();  // should throw because param is now unbound
+        } catch (const exception_t& e) {
+            threw = true;
+            assert(std::string(e.what()).find("unbound param") != std::string::npos);
+        }
+        assert(threw);
+    }
+
     std::fprintf(stderr, "\nAll tests passed successfully.\n");
 }
-#endif // GX_SQLITE3_ENABLE_TESTS
+#endif // SQLITE3_ENABLE_TESTS
 
 } // namespace sqlite3
 
-#endif // GX_SQLITE3_HPP
+#endif

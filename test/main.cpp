@@ -1,5 +1,5 @@
 #define SQLITE3VIAL_ENABLE_TESTS 1 
-#include "sqlite3vial.hpp"
+#include "../include/sqlite3vial.hpp"
 
 int main()
 {
